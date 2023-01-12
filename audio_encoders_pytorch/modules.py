@@ -5,7 +5,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from einops import rearrange, reduce
-from einops_exts import rearrange_many
 from torch import Tensor
 
 from .utils import closest_power_2, default, exists, groupby, prefix_dict, prod, to_list
@@ -66,7 +65,7 @@ class ConvBlock1d(nn.Module):
         use_norm: bool = True,
     ) -> None:
         super().__init__()
-
+        
         self.groupnorm = (
             nn.GroupNorm(num_groups=num_groups, num_channels=in_channels)
             if use_norm
@@ -481,6 +480,7 @@ class STFT(nn.Module):
             return_complex=True,
             normalized=True,
         )
+        stft = stft[:, :, :-1] if (self.num_fft % 2 == 0) else stft
 
         if self.use_complex:
             # Returns real and imaginary
@@ -490,13 +490,14 @@ class STFT(nn.Module):
             magnitude, phase = torch.abs(stft), torch.angle(stft)
             stft_a, stft_b = magnitude, phase
 
-        return rearrange_many((stft_a, stft_b), "(b c) f l -> b c f l", b=b)
+        return rearrange(stft_a, "(b c) f l -> b c f l", b=b), rearrange(stft_b, "(b c) f l -> b c f l", b=b)
 
     def decode(self, stft_a: Tensor, stft_b: Tensor) -> Tensor:
         b, l = stft_a.shape[0], stft_a.shape[-1]  # noqa
         length = closest_power_2(l * self.hop_length)
 
-        stft_a, stft_b = rearrange_many((stft_a, stft_b), "b c f l -> (b c) f l")
+        stft_a = rearrange(stft_a, "b c f l -> (b c) f l")
+        stft_b = rearrange(stft_b, "b c f l -> (b c) f l")
 
         if self.use_complex:
             real, imag = stft_a, stft_b
@@ -504,7 +505,7 @@ class STFT(nn.Module):
             magnitude, phase = stft_a, stft_b
             real, imag = magnitude * torch.cos(phase), magnitude * torch.sin(phase)
 
-        stft = torch.stack([real, imag], dim=-1)
+        stft = torch.view_as_complex(torch.stack([real, imag], dim=-1))
 
         wave = torch.istft(
             stft,
@@ -522,13 +523,14 @@ class STFT(nn.Module):
         self, wave: Tensor, stacked: bool = True
     ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
         stft_a, stft_b = self.encode(wave)
-        stft_a, stft_b = rearrange_many((stft_a, stft_b), "b c f l -> b (c f) l")
+        stft_a = rearrange(stft_a, "b c f l -> b (c f) l")
+        stft_b = rearrange(stft_b, "b c f l -> b (c f) l")
         return torch.cat((stft_a, stft_b), dim=1) if stacked else (stft_a, stft_b)
 
     def decode1d(self, stft_pair: Tensor) -> Tensor:
         f = self.num_fft // 2 + 1
-        stft_a, stft_b = stft_pair.chunk(chunks=2, dim=1)
-        stft_a, stft_b = rearrange_many((stft_a, stft_b), "b (c f) l -> b c f l", f=f)
+        stft_a = rearrange(stft_a, "b (c f) l -> b c f l", f=f)
+        stft_b = rearrange(stft_b, "b (c f) l -> b c f l", f=f)
         return self.decode(stft_a, stft_b)
 
 
