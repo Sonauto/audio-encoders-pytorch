@@ -9,6 +9,7 @@ from .modules import (
     MAE1d,
     ME1d,
     MelE1d,
+    StraightMel1d,
     NoiserBottleneck,
     TanhBottleneck,
     VariationalBottleneck,

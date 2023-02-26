@@ -653,6 +653,21 @@ class MelE1d(Encoder1d):
         mel = rearrange(self.mel(x), "b c f l -> b (c f) l")
         return super().forward(mel, **kwargs)
 
+class StraightMel1d(Encoder1d):
+    """Magnitude Encoder"""
+
+    def __init__(self, in_channels: int, mel_channels: int, **kwargs):
+        mel_kwargs, kwargs = groupby("mel_", kwargs)
+        super().__init__(in_channels=in_channels * mel_channels, **kwargs)
+        self.mel = MelSpectrogram(n_mel_channels=mel_channels, **mel_kwargs)
+        self.downsample_factor *= self.mel.hop_length
+
+    def forward(self, x: Tensor, **kwargs) -> Union[Tensor, Tuple[Tensor, Any]]:  # type: ignore # noqa
+        #mel = rearrange(self.mel(x), "b c f l -> b (c f) l")
+        mel = torch.mean(self.mel(x), axis=1)
+        #return super().forward(mel, **kwargs)
+        return mel
+
 
 """
 Bottlenecks
